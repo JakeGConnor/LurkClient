@@ -1,0 +1,457 @@
+#!urs/bin/env python3
+import os
+import tkinter as tk
+import matplotlib as mpl
+if os.environ.get('DISPLAY','') == '':
+    print('no display found. Using non-interactive Agg backend')
+    mpl.use('Agg')
+import matplotlib.pyplot as plt
+from _thread import start_new_thread
+from socket import *
+from struct import *
+from sys import argv, exit
+import codecs
+
+class AutoResizeTk(tk.Tk):
+    """Custom tkinter root window that auto-resizes based on the content."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.grid_columnconfigure(0, weight=1, uniform='col')
+        self.grid_columnconfigure(1, weight=1, uniform='col')
+        self.grid_columnconfigure(2, weight=1, uniform='col')
+        self.grid_columnconfigure(3, weight=1, uniform='col')
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=1)
+        self.bind('<Configure>', self._on_configure)
+
+    def _on_configure(self, event):
+        """Resize the window to fit the content."""
+        ##self.update_idletasks()
+        self.geometry('{}x{}'.format(
+            int(self.winfo_reqwidth()),
+            int(self.winfo_reqheight())
+        ))
+
+class LurkReader(tk.Frame):
+    def recv_info(self):
+        while True:
+            mtype = int(unpack_from("<B", self.skt.recv(1))[0])
+            
+            print(mtype)
+            
+            if(mtype == 10):
+                print("Receiving Character Info\n")
+                player_name = unpack_from("<32s", self.skt.recv(32))[0]
+                flag = unpack_from("<B", self.skt.recv(1))[0]
+                attack = unpack_from("<H", self.skt.recv(2))[0]
+                defence = unpack_from("<H", self.skt.recv(2))[0]
+                regen = unpack_from("<H", self.skt.recv(2))[0]
+                health = unpack_from("<h", self.skt.recv(2))[0]
+                gold = unpack_from("<H", self.skt.recv(2))[0]
+                room_num = unpack_from("<H", self.skt.recv(2))[0]
+                dlen = int(unpack_from("<H", self.skt.recv(2))[0])
+                player_description = self.skt.recv(dlen)
+                
+                player_name = player_name.decode("utf-8").replace("\x00", "")
+                player_description = player_description.decode("utf-8")
+                
+                print("Name: " + player_name)
+                print("Attack: " + str(attack))
+                print("Defence: " + str(defence))
+                print("Regen: " + str(regen))
+                print("Health: " + str(health))
+                print("Description: " + player_description)                
+                print(self.name + "\t" + player_name)
+                print(self.name == player_name)
+                
+                if(self.name == player_name):
+                    print("Player is you!")
+                    self.player_stats.configure(state='normal')
+                    self.player_stats.delete("1.0", "end")
+                    self.player_stats.configure(state='disabled')
+                    
+                    self.player_stats.configure(state='normal')
+                    self.player_stats.insert("end", "\nName: " + player_name)
+                    self.player_stats.insert("end", "\nAttack: " + str(attack))
+                    self.player_stats.insert("end", "\nDefence: " + str(defence))
+                    self.player_stats.insert("end", "\nRegen: " + str(regen))
+                    self.player_stats.insert("end", "\nHP: " + str(health))
+                    self.player_stats.insert("end", "\nGold: " + str(gold))
+                    self.player_stats.insert("end", "\nDescription: " + player_description)
+                    self.player_stats.configure(state='disabled')
+                else:
+                    self.player_box.configure(state='normal')
+                    self.player_box.insert("end", "\nName: " + player_name)
+                    self.player_box.insert("end", "\tHP: " + str(health))
+                    self.player_box.configure(state='disabled')
+                
+            elif(mtype == 8):
+                type_accepted = unpack_from("<B", self.skt.recv(1))[0]
+                self.server_output.configure(state='normal')
+                self.server_output.insert("end", "\n\nAccepted type:" + str(type_accepted) + "\n\n")
+                self.server_output.configure(state='disabled')
+                
+            elif(mtype == 9):
+                self.room_list.configure(state='normal')
+                self.room_list.delete("1.0", "end")
+                self.room_list.insert("end", "-----------Connections-----------")
+                self.room_list.configure(state='disabled')
+                
+                room_num = unpack_from("<H", self.skt.recv(2))[0]
+                room_name = unpack_from("<32s", self.skt.recv(32))[0]
+                rm_dlen = int(unpack_from("<H", self.skt.recv(2))[0])
+                rm_description = self.skt.recv(rm_dlen)
+                
+                room_name = room_name.decode("utf-8")
+                rm_description = rm_description.decode("utf-8")
+                
+                self.server_output.configure(state='normal')
+                self.server_output.insert("end", "\n\nRoom Number: " + str(room_num))
+                self.server_output.insert("end", "\nRoom Name: " + room_name)
+                self.server_output.insert("end", "\nDescription: " + rm_description)
+                self.server_output.configure(state='disabled')
+                
+                self.player_box.configure(state='normal')
+                self.player_box.delete("1.0", "end")
+                self.player_box.insert("end", "-----------Players/Monsters-----------")
+                self.player_box.configure(state='disabled')
+                
+            elif(mtype == 13):
+                connect_num = unpack_from("<H", self.skt.recv(2))[0]
+                connect_name = unpack_from("<32s", self.skt.recv(32))[0]
+                connect_dlen = int(unpack_from("<H", self.skt.recv(2))[0])
+                connect_description = self.skt.recv(rm_dlen)
+                
+                connect_name = connect_name.decode("utf-8").replace("\x00", "")
+                connect_description = connect_description.decode("utf-8", 'ignore')
+                
+                self.room_list.configure(state='normal')
+                self.room_list.insert("end", "\n\nConnection Number: " + str(connect_num))
+                self.room_list.insert("end", "\nConnection Name: " + connect_name)
+                self.room_list.configure(state='disabled')
+
+            elif(mtype == 7):
+                err_code = unpack_from("<B", self.skt.recv(1))[0]
+                err_len = int(unpack_from("<H", self.skt.recv(2))[0])
+                err_msg = self.skt.recv(err_len)
+                
+                err_msg = err_msg.decode("utf-8")
+                
+                self.server_output.configure(state='normal')
+                self.server_output.insert("end", "\n\nERROR\n")
+                self.server_output.insert("end", "\nERROR_code: " + str(err_code) + "\n")
+                self.server_output.insert("end", "\nERROR_Message: " + err_msg + "\n\n\n")
+                self.server_output.configure(state='disabled')
+                
+            elif(mtype == 1):
+                mlen = int(unpack_from("<B", self.skt.recv(2))[0])
+                rep_name = self.skt.recv(32)
+                sen_name = self.skt.recv(32)
+                message = self.skt.recv(mlen) 
+                
+                print(sen_name)
+                
+                rep_name = rep_name.decode("utf-8").replace("\x00", "")
+                sen_name = sen_name.decode("utf-8").replace("\x00", "")
+                message = message.decode("utf-8").replace("\x00", "")
+                       
+                self.message_box.configure(state='normal')
+                self.message_box.insert("end", "\n" + str(sen_name) + " >> " + self.name + ": " +str(message))
+                self.message_box.configure(state='disabled')
+                        
+    def connect_to_server(self):
+        # Get the hostname and the port from the GUI
+        hostname = self.hostname_textbox.get(1.0, "end").strip()
+        port = int(self.port_textbox.get(1.0, "end").strip())
+        print((hostname, port))
+
+        self.skt = socket(AF_INET, SOCK_STREAM)
+        self.skt.connect((hostname, port))
+        # It'd be a good idea to see if this worked!
+        mtype = unpack_from("<B", self.skt.recv(1))[0]
+        server_description = ""
+        if(mtype == 14):
+            major, minor, elen = unpack_from("<BBH", self.skt.recv(4))
+            server_description += "Server version is:  " + str(major) + "." + str(minor) + "\n"
+            mtype = unpack_from("<B", self.skt.recv(1))[0]
+            print(server_description)
+        
+        if(mtype == 11):
+            game_header = self.skt.recv(6)
+            format_string = "<HHH"
+            ip, sl, dl = unpack_from(format_string, game_header)
+            description = self.skt.recv(dl)
+            server_description += "Initial Points:  " + str(ip) + "\nStat Limit: " + str(sl) + "\nDescription: " + description.decode("utf-8")
+            server_description += "\n"
+        else:
+            server_description += "Server presented type " + str(mtype) + "\n"
+        
+        print(server_description)
+        self.server_output.configure(state='normal')
+        self.server_output.insert("end", server_description)
+        self.server_output.configure(state='disabled')
+        start_new_thread(self.recv_info, ())
+        
+    def connect_functions(self):
+        self.connect_to_server()
+        self.prompt_window.destroy()
+        
+    def connect_prompt_window(self):
+        self.prompt_window = tk.Toplevel(root)
+        self.prompt_window.title("Prompt Window")
+
+        self.hostname_textbox = tk.Text(self.prompt_window,height=1, width=20)
+        self.hostname_textbox.pack()
+
+        self.port_textbox = tk.Text(self.prompt_window, height=1, width=20)
+        self.port_textbox.pack()
+
+        button = tk.Button(self.prompt_window, text="Submit", command=self.connect_functions)
+        button.pack()
+    
+    def skt_close(self):
+        self.skt.send(pack("<B", 12))
+        
+        self.skt.close()
+        print("Socket has been closed")
+        
+        self.server_output.configure(state='normal')
+        self.server_output.insert("end", "Socket Closed\n\n")
+        self.server_output.configure(state='disabled')
+        
+    def submit_character(self):
+        self.name = self.name_textbox.get(1.0, "end").strip()
+        flags = int(self.flags_textbox.get(1.0, "end").strip())
+        attack = int(self.attack_textbox.get(1.0, "end").strip())
+        defence = int(self.defence_textbox.get(1.0, "end").strip())
+        regen = int(self.regen_textbox.get(1.0, "end").strip())
+        description = self.description_textbox.get(1.0, "end").strip()
+        
+        self.client_name = self.name.split()
+        
+        self.skt.send(pack("<B32sBHHHhHHH", 10, self.name.encode("utf-8"), flags, attack, defence, regen, 0, 0, 0, len(description)))
+        self.skt.send(description.encode("utf-8"))
+        
+        
+    def character_functions(self):
+        self.submit_character()
+        print("Character Sent")
+        self.skt.send(pack("<B", 6))
+        self.character_prompt.destroy()
+        
+    def character_prompt_window(self):
+        self.character_prompt = tk.Toplevel(root)
+        self.character_prompt.title("Prompt Window")
+        
+        name_lable = tk.Label(self.character_prompt, text="Name")
+        name_lable.pack()
+        self.name_textbox = tk.Text(self.character_prompt,height=1, width=20)
+        self.name_textbox.pack()
+
+        flag_lable = tk.Label(self.character_prompt, text ="Flags")
+        flag_lable.pack()
+        self.flags_textbox = tk.Text(self.character_prompt, height=1, width=20)
+        self.flags_textbox.pack()
+        
+        attack_lable = tk.Label(self.character_prompt, text ="Attack")
+        attack_lable.pack()
+        self.attack_textbox = tk.Text(self.character_prompt, height=1, width=20)
+        self.attack_textbox.pack()
+        
+        defence_lable = tk.Label(self.character_prompt, text ="Defence")
+        defence_lable.pack()
+        self.defence_textbox = tk.Text(self.character_prompt, height=1, width=20)
+        self.defence_textbox.pack()
+
+        regen_lable = tk.Label(self.character_prompt, text ="Regen")
+        regen_lable.pack()
+        self.regen_textbox = tk.Text(self.character_prompt, height=1, width=20)
+        self.regen_textbox.pack()
+        
+        discription_lable = tk.Label(self.character_prompt, text ="Description")
+        discription_lable.pack()
+        self.description_textbox = tk.Text(self.character_prompt, height=4, width=40)
+        self.description_textbox.pack()
+        
+        button = tk.Button(self.character_prompt, text="Submit", command = self.character_functions)
+        button.pack()
+    
+    def MSG_send(self):
+        rep_name = self.reciever_textbox.get(1.0, "end").strip()
+        MSG_sent = self.msg_textbox.get(1.0, "end").strip()
+        
+        self.skt.send(pack("<BH", 1, len(MSG_sent)))
+        self.skt.send(pack("<32s", rep_name.encode("utf-8")))
+        self.skt.send(pack("<32s", self.name.encode("utf-8")))
+        self.skt.send(MSG_sent.encode("utf-8"))
+        
+        self.message_box.configure(state='normal')
+        self.message_box.insert("end", "\n" + str(rep_name) + " << " + self.name + ": " + MSG_sent)
+        self.message_box.configure(state='disabled')
+    
+    def MSG_functions(self):
+        self.MSG_send()
+        self.msg_prompt.destroy()
+        
+    def MSG_controll(self):
+        self.msg_prompt = tk.Toplevel(root)
+        self.msg_prompt.title("Prompt Window")
+        
+        reciever_lable = tk.Label(self.msg_prompt, text="Recipient")
+        reciever_lable.pack()
+        self.reciever_textbox = tk.Text(self.msg_prompt,height=1, width=20)
+        self.reciever_textbox.pack()
+        
+        msg_lable = tk.Label(self.msg_prompt, text="Message")
+        msg_lable.pack()
+        self.msg_textbox = tk.Text(self.msg_prompt,height=3, width=30)
+        self.msg_textbox.pack()
+        
+        button = tk.Button(self.msg_prompt, text="Submit", command = self.MSG_functions)
+        button.pack()
+        
+    def MOVE_send(self):
+        move_num = int(self.move_textbox.get(1.0, "end").strip())
+        
+        print("Room to enter: " + str(move_num)+"\n")
+        
+        self.skt.send(pack("<BH", 2, move_num))
+        
+    def MOVE_functions(self):
+        self.MOVE_send()
+        print("Room Change")
+        self.move_prompt.destroy()
+        
+    def MOVE_controll(self):
+        self.move_prompt = tk.Toplevel(root)
+        self.move_prompt.title("Prompt Window")
+        
+        move_lable = tk.Label(self.move_prompt, text="Enter Room")
+        move_lable.pack()
+        self.move_textbox = tk.Text(self.move_prompt, height=1, width=20)
+        self.move_textbox.pack()
+        
+        button = tk.Button(self.move_prompt, text="Submit", command = self.MOVE_functions)
+        button.pack()
+        
+    def PVP_funct_send(self):
+        pvp_name = self.player_textbox.get(1.0, "end").strip()
+        
+        self.skt.send(pack("<B32s", 4, pvp_name.encode("utf-8")))
+        
+    def PVP_functions_send(self):
+        self.PVP_funct_send()
+        self.pvp_prompt.destroy()
+        
+    def PVP_controll(self):
+        self.pvp_prompt = tk.Toplevel(root)
+        self.pvp_prompt.title("Prompt Window")
+        
+        player_lable = tk.Label(self.pvp_prompt, text="Enter Player")
+        player_lable.pack()
+        self.player_textbox = tk.Text(self.pvp_prompt, height=1, width=20)
+        self.player_textbox.pack()
+        
+        button = tk.Button(self.pvp_prompt, text="Submit", command = self.PVP_functions_send)
+        button.pack()
+        
+    def PVP_functions(self):
+        self.PVP_controll()
+        self.fight_prompt.destroy()
+        
+    def PVE_controll(self):
+        self.skt.send(pack("<B", 3))
+        
+    def PVE_functions(self):
+        self.PVE_controll()
+        self.fight_prompt.destroy()
+        
+    def FIGHT_controll(self):
+        self.fight_prompt = tk.Toplevel(root)
+        self.fight_prompt.title("Prompt Window")
+        
+        button = tk.Button(self.fight_prompt, text="PVE", height = 2, width = 20, command = self.PVE_functions)
+        button.pack()
+        
+        button = tk.Button(self.fight_prompt, text="PVP", height = 2, width = 20, command = self.PVP_functions)
+        button.pack()
+        
+    def LOOT_controll(self):
+        loot_name = self.loot_textbox.get(1.0, "end").strip()
+        
+        self.skt.send(pack("<B32s", 5, loot_name.encode("utf-8")))
+        
+    def LOOT_functions(self):
+        self.LOOT_controll()
+        self.loot_prompt.destroy()
+    
+    def LOOT_controll(self):
+        self.loot_prompt = tk.Toplevel(root)
+        self.loot_prompt.title("Prompt Window")
+        
+        loot_lable = tk.Label(self.loot_prompt, text="Enter Player")
+        loot_lable.pack()
+        self.loot_textbox = tk.Text(self.loot_prompt, height=1, width=20)
+        self.loot_textbox.pack()
+        
+        button = tk.Button(self.loot_prompt, text="Submit", command = self.LOOT_functions)
+        button.pack()
+    
+    def __init__(self, master):
+        tk.Frame.__init__(self, master)
+
+        self.message_box = tk.Text(root,state='disabled')
+        self.message_box.grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
+        
+        self.player_box = tk.Text(root,state='disabled')
+        self.player_box.grid(row=1, column=0, padx=10, pady=10, sticky='nsew')
+
+        self.server_output = tk.Text(root, state='disabled')
+        self.server_output.grid(row=0, column=1, rowspan=2, columnspan=2, padx=10, pady=10, sticky='nsew')
+
+        self.room_list = tk.Text(root, state='disabled')
+        self.room_list.grid(row=1, column=3, padx=10, pady=10, sticky='nsew')
+
+        self.player_stats = tk.Text(root, state='disabled')
+        self.player_stats.grid(row=0, column=3, padx=10, pady=10, sticky='nsew')
+
+        connect_button = tk.Button(root, text="Connect", command=self.connect_prompt_window)
+        connect_button.grid(row=2, column=0, padx=10, pady=10, sticky='nsew')
+
+        move_button = tk.Button(root, text="Move", command = self.MOVE_controll)
+        move_button.grid(row=2, column=1, padx=10, pady=10, sticky='nsew')
+
+        fight_button = tk.Button(root, text="Fight", command = self.FIGHT_controll)
+        fight_button.grid(row=2, column=2, padx=10, pady=10, sticky='nsew')
+
+        msg_button = tk.Button(root, text="Message", command = self.MSG_controll)
+        msg_button.grid(row=2, column=3, padx=10, pady=10, sticky='nsew')
+
+        dscnt_button = tk.Button(root, text="Disconnect", command=self.skt_close)
+        dscnt_button.grid(row=3, column=0, padx=10, pady=10, sticky='nsew')
+
+        make_character = tk.Button(root, text="Character", command=self.character_prompt_window)
+        make_character.grid(row=3, column=1, padx=10, pady=10, sticky='nsew')
+
+        loot_button = tk.Button(root, text="Loot", command = self.LOOT_controll)
+        loot_button.grid(row=3, column=2, padx=10, pady=10, sticky='nsew')
+
+        close_button = tk.Button(root, text="Close", command=root.destroy)
+        close_button.grid(row=3, column=3, padx=10, pady=10, sticky='nsew')   
+
+root = AutoResizeTk()
+
+# get the dimensions of the screen
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+
+# set the width and height of the window
+default_width = int(screen_width / 2)
+default_height = int(screen_height)
+root.geometry(f"{default_width}x{default_height}")
+
+root.title("Lurk Game Reader")
+lr = LurkReader(root)
+root.mainloop()
